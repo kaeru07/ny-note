@@ -1,61 +1,57 @@
-# ny-note
+# Quick Notes
 
-Vercelで公開する「全体ノートアプリ」の作成・運用メモです。
+Next.js + TypeScript + App Router + Tailwind CSS で実装したシンプルなノートアプリです。
 
-## GitHub → ChatGPT環境 → Vercel 公開手順
+## 主な機能
 
-### ① GitHubでリポジトリ作成
-- https://github.com を開く
-- 右上の「＋」→ **New repository**
-- **Repository name** を入力
-- **Public** を選択
-- **Add README** にチェック
-- **Create repository** を押す
+- ノート一覧表示
+- ノート新規作成 / 編集 / 削除
+- タイトル検索
+- 本文プレビュー表示
+- 最終更新日時表示
+- ダークモード切替
+- localStorage 永続化
+- レスポンシブ対応（モバイル1カラム）
 
-### ② ChatGPTブラウザで環境作成
-- ChatGPTを開く
-- 左メニューの「環境」を選択
-- 「＋」を押す
-- **GitHub repository** を選択
-- 作成したリポジトリを選択
-- 環境名を入力
-- **環境作成** を押す
+## 技術スタック
 
-### ③ ChatGPT環境で開発
-- 環境を開く
-- コード生成・ファイル作成・修正を行う
-- ノート機能に加えて、自分で描ける（手書き）機能を追加する
-- 変更内容を確認して、GitHubへcommitする
+- Next.js 14 (App Router)
+- TypeScript
+- Tailwind CSS
 
-### ④ Copilotへ初回コミットを依頼（追記）
-- ノート作成後、GitHub Copilot Chatに初回コミットを依頼する
-- 依頼例: 「この変更を初回コミットとして、わかりやすいコミットメッセージでcommitしてください」
-- commit内容を確認して必要なら修正する
+## セットアップ
 
-### ⑤ Pull Requestを作成
-- GitHubで対象リポジトリを開く
-- 作業ブランチを `main` に向けて **Compare & pull request**
-- タイトル・説明を入力して **Create pull request**
+```bash
+npm install
+npm run dev
+```
 
-### ⑥ Vercelで公開
-- https://vercel.com を開く
-- **Add New** → **Project**
-- GitHub repository を選択
-- **Deploy** を押す
+起動後、`http://localhost:3000` を開いてください。
 
-### ⑦ 公開URLを確認
-- 数十秒で公開される
-- 例: `https://xxxx.vercel.app`
+## 利用方法
 
-### ⑧ 更新方法
-- ChatGPT環境で修正
-- GitHubにcommit
-- 必要に応じてPRを作成・マージ
-- Vercelが自動デプロイ
+1. ヘッダー右側の「新規作成」でノートを追加
+2. 左カラムでノートを選択
+3. 右カラムでタイトル・本文を編集（自動保存）
+4. 不要なノートは「削除」ボタンで削除
+5. ヘッダー検索ボックスでタイトル検索
+6. ダークモードボタンで表示切替
 
-## PR作成で止まるときのエラーチェック
-- リポジトリに変更があるか（差分が0だとPRは作れない）
-- `main` ではなく作業ブランチで作業しているか
-- ブランチがGitHubにpush済みか
-- ベースブランチ（通常 `main`）と比較ブランチが逆になっていないか
-- GitHub / Vercel 側の一時的障害（Statusページ）
+## Vercel デプロイ手順
+
+1. GitHub にリポジトリを push する
+2. [Vercel](https://vercel.com/) にログイン
+3. **Add New** → **Project** を選択
+4. 対象の GitHub リポジトリを Import
+5. Framework Preset が **Next.js** になっていることを確認
+6. **Deploy** をクリック
+7. デプロイ完了後に発行される URL へアクセス
+
+## 開発コマンド
+
+```bash
+npm run dev    # 開発サーバー
+npm run lint   # ESLint
+npm run build  # 本番ビルド
+npm run start  # 本番サーバー
+```
