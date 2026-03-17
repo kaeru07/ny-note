@@ -1,61 +1,65 @@
 # ny-note
 
-Vercelで公開する「全体ノートアプリ」の作成・運用メモです。
+Supabase で永続化するシンプルな 1 ページノートアプリです。
 
-## GitHub → ChatGPT環境 → Vercel 公開手順
+## セットアップ
 
-### ① GitHubでリポジトリ作成
-- https://github.com を開く
-- 右上の「＋」→ **New repository**
-- **Repository name** を入力
-- **Public** を選択
-- **Add README** にチェック
-- **Create repository** を押す
+```bash
+npm install
+cp .env.example .env.local
+npm run dev
+```
 
-### ② ChatGPTブラウザで環境作成
-- ChatGPTを開く
-- 左メニューの「環境」を選択
-- 「＋」を押す
-- **GitHub repository** を選択
-- 作成したリポジトリを選択
-- 環境名を入力
-- **環境作成** を押す
+## 環境変数
 
-### ③ ChatGPT環境で開発
-- 環境を開く
-- コード生成・ファイル作成・修正を行う
-- ノート機能に加えて、自分で描ける（手書き）機能を追加する
-- 変更内容を確認して、GitHubへcommitする
+`.env.local` を作成して以下を設定してください。
 
-### ④ Copilotへ初回コミットを依頼（追記）
-- ノート作成後、GitHub Copilot Chatに初回コミットを依頼する
-- 依頼例: 「この変更を初回コミットとして、わかりやすいコミットメッセージでcommitしてください」
-- commit内容を確認して必要なら修正する
+```bash
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
 
-### ⑤ Pull Requestを作成
-- GitHubで対象リポジトリを開く
-- 作業ブランチを `main` に向けて **Compare & pull request**
-- タイトル・説明を入力して **Create pull request**
+## Supabase テーブル
 
-### ⑥ Vercelで公開
-- https://vercel.com を開く
-- **Add New** → **Project**
-- GitHub repository を選択
-- **Deploy** を押す
+```sql
+create extension if not exists pgcrypto;
 
-### ⑦ 公開URLを確認
-- 数十秒で公開される
-- 例: `https://xxxx.vercel.app`
+create table if not exists public.notes (
+  id uuid primary key default gen_random_uuid(),
+  text text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
 
-### ⑧ 更新方法
-- ChatGPT環境で修正
-- GitHubにcommit
-- 必要に応じてPRを作成・マージ
-- Vercelが自動デプロイ
+create or replace function public.set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
 
-## PR作成で止まるときのエラーチェック
-- リポジトリに変更があるか（差分が0だとPRは作れない）
-- `main` ではなく作業ブランチで作業しているか
-- ブランチがGitHubにpush済みか
-- ベースブランチ（通常 `main`）と比較ブランチが逆になっていないか
-- GitHub / Vercel 側の一時的障害（Statusページ）
+drop trigger if exists trg_notes_updated_at on public.notes;
+create trigger trg_notes_updated_at
+before update on public.notes
+for each row
+execute procedure public.set_updated_at();
+```
+
+## RLS 例（匿名アクセスを許可する場合）
+
+```sql
+alter table public.notes enable row level security;
+
+create policy "allow select notes"
+on public.notes for select
+using (true);
+
+create policy "allow insert notes"
+on public.notes for insert
+with check (true);
+
+create policy "allow delete notes"
+on public.notes for delete
+using (true);
+```
