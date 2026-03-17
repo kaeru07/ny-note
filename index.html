@@ -79,7 +79,14 @@
         font-size: 13px;
       }
       .card-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
         margin-top: 10px;
+      }
+      .card-edit-input {
+        min-height: 120px;
+        margin-top: 8px;
       }
       .empty {
         margin-top: 12px;
@@ -148,6 +155,7 @@
 
         let notes = [];
         let listVisible = false;
+        let editingId = null;
 
         function getNotes() {
           try {
@@ -182,10 +190,20 @@
             .map(
               (note) => `
                 <article class="card">
-                  <div>${note.text.replace(/</g, "&lt;").replace(/\n/g, "<br>")}</div>
+                  ${
+                    editingId === note.id
+                      ? `<textarea class="card-edit-input" data-role="edit-input" data-id="${note.id}" aria-label="メモ編集">${note.text.replace(/</g, "&lt;")}</textarea>`
+                      : `<div>${note.text.replace(/</g, "&lt;").replace(/\n/g, "<br>")}</div>`
+                  }
                   <div class="meta">更新日時: ${new Date(note.updatedAt).toLocaleString("ja-JP")}</div>
                   <div class="card-actions">
-                    <button class="btn" type="button" data-id="${note.id}" aria-label="メモを削除">削除</button>
+                    ${
+                      editingId === note.id
+                        ? `<button class="btn btn-primary" type="button" data-action="save" data-id="${note.id}" aria-label="編集を保存">保存</button>
+                           <button class="btn" type="button" data-action="cancel" data-id="${note.id}" aria-label="編集をキャンセル">キャンセル</button>`
+                        : `<button class="btn" type="button" data-action="edit" data-id="${note.id}" aria-label="メモを編集">編集</button>`
+                    }
+                    <button class="btn" type="button" data-action="delete" data-id="${note.id}" aria-label="メモを削除">削除</button>
                   </div>
                 </article>
               `
@@ -229,9 +247,41 @@
           const target = event.target;
           if (!(target instanceof HTMLButtonElement)) return;
           const id = Number(target.dataset.id);
-          const next = notes.filter((note) => note.id !== id);
-          saveNotes(next);
-          renderNotes();
+          const action = target.dataset.action;
+
+          if (action === "edit") {
+            editingId = id;
+            renderNotes();
+            return;
+          }
+
+          if (action === "cancel") {
+            editingId = null;
+            renderNotes();
+            return;
+          }
+
+          if (action === "save") {
+            const editInput = notesContainer.querySelector(`textarea[data-role="edit-input"][data-id="${id}"]`);
+            if (!(editInput instanceof HTMLTextAreaElement)) return;
+            const text = editInput.value.trim();
+            if (!text) return;
+
+            const next = notes.map((note) =>
+              note.id === id ? { ...note, text, updatedAt: new Date().toISOString() } : note
+            );
+            editingId = null;
+            saveNotes(next);
+            renderNotes();
+            return;
+          }
+
+          if (action === "delete") {
+            const next = notes.filter((note) => note.id !== id);
+            if (editingId === id) editingId = null;
+            saveNotes(next);
+            renderNotes();
+          }
         });
       })();
     </script>
