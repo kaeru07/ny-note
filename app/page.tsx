@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseClient, hasSupabaseEnv } from "@/lib/supabase";
 
 type Note = {
   id: string;
@@ -31,6 +31,10 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
     const savedDraft = window.localStorage.getItem(DRAFT_KEY);
     if (savedDraft) {
       setDraft(savedDraft);
@@ -38,24 +42,29 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
     window.localStorage.setItem(DRAFT_KEY, draft);
   }, [draft]);
 
   useEffect(() => {
-    const fetchNotes = async () => {
-      if (!supabase) {
-        setErrorMessage("Supabaseの環境変数が未設定です");
-        setIsLoading(false);
-        return;
-      }
+    if (!hasSupabaseEnv()) {
+      setErrorMessage("接続エラー");
+      setIsLoading(false);
+      return;
+    }
 
+    const fetchNotes = async () => {
+      const supabase = getSupabaseClient();
       const { data, error } = await supabase
         .from("notes")
         .select("id, text, created_at, updated_at")
         .order("updated_at", { ascending: false });
 
       if (error) {
-        setErrorMessage("メモの取得に失敗しました");
+        setErrorMessage("接続エラー");
       } else if (data) {
         setNotes(data);
       }
@@ -76,10 +85,16 @@ export default function Home() {
 
   const saveNote = async () => {
     const text = draft.trim();
-    if (!text || !supabase) {
+    if (!text) {
       return;
     }
 
+    if (!hasSupabaseEnv()) {
+      setErrorMessage("接続エラー");
+      return;
+    }
+
+    const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from("notes")
       .insert({ text })
@@ -87,21 +102,28 @@ export default function Home() {
       .single();
 
     if (error || !data) {
+      setErrorMessage("接続エラー");
       return;
     }
 
     setNotes((prev) => [data, ...prev]);
     setDraft("");
-    window.localStorage.removeItem(DRAFT_KEY);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(DRAFT_KEY);
+    }
   };
 
   const deleteNote = async (id: string) => {
-    if (!supabase) {
+    if (!hasSupabaseEnv()) {
+      setErrorMessage("接続エラー");
       return;
     }
 
+    const supabase = getSupabaseClient();
     const { error } = await supabase.from("notes").delete().eq("id", id);
     if (error) {
+      setErrorMessage("接続エラー");
       return;
     }
 
