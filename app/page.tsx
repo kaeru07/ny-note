@@ -11,6 +11,7 @@ type Note = {
 };
 
 const DRAFT_KEY = "ny-note-draft";
+const LOCAL_NOTES_KEY = "ny-note-local-notes";
 
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat("ja-JP", {
@@ -32,9 +33,37 @@ export default function Home() {
   const [saveError, setSaveError] = useState("");
   const [deleteError, setDeleteError] = useState("");
 
+  const loadLocalNotes = useCallback(() => {
+    if (typeof window === "undefined") {
+      return [] as Note[];
+    }
+
+    const saved = window.localStorage.getItem(LOCAL_NOTES_KEY);
+    if (!saved) {
+      return [] as Note[];
+    }
+
+    try {
+      const parsed = JSON.parse(saved) as Note[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.error("local notes parse error", error);
+      return [] as Note[];
+    }
+  }, []);
+
+  const persistLocalNotes = useCallback((nextNotes: Note[]) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(LOCAL_NOTES_KEY, JSON.stringify(nextNotes));
+  }, []);
+
   const fetchNotes = useCallback(async () => {
     if (!hasSupabaseEnv()) {
-      setFetchError("読み込みに失敗しました");
+      setNotes(loadLocalNotes());
+      setFetchError("");
       setIsLoading(false);
       return;
     }
@@ -64,7 +93,7 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [loadLocalNotes]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -105,7 +134,21 @@ export default function Home() {
     }
 
     if (!hasSupabaseEnv()) {
-      setSaveError("保存に失敗しました");
+      const now = new Date().toISOString();
+      const nextNote: Note = {
+        id: crypto.randomUUID(),
+        text,
+        created_at: now,
+        updated_at: now
+      };
+      const nextNotes = [nextNote, ...loadLocalNotes()];
+      persistLocalNotes(nextNotes);
+      setNotes(nextNotes);
+      setDraft("");
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(DRAFT_KEY);
+      }
+      setSaveError("");
       return;
     }
 
@@ -138,7 +181,10 @@ export default function Home() {
 
   const deleteNote = async (id: string) => {
     if (!hasSupabaseEnv()) {
-      setDeleteError("削除に失敗しました");
+      const nextNotes = loadLocalNotes().filter((note) => note.id !== id);
+      persistLocalNotes(nextNotes);
+      setNotes(nextNotes);
+      setDeleteError("");
       return;
     }
 
