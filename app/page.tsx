@@ -11,7 +11,6 @@ type Note = {
 };
 
 const DRAFT_KEY = "ny-note-draft";
-const LOCAL_NOTES_KEY = "ny-note-local-notes";
 
 function formatDate(iso: string) {
   return new Intl.DateTimeFormat("ja-JP", {
@@ -32,38 +31,24 @@ export default function Home() {
   const [fetchError, setFetchError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [deleteError, setDeleteError] = useState("");
+  const [debugMessage, setDebugMessage] = useState("");
 
-  const loadLocalNotes = useCallback(() => {
-    if (typeof window === "undefined") {
-      return [] as Note[];
+  const getMissingSupabaseEnv = useCallback(() => {
+    const missing: string[] = [];
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      missing.push("NEXT_PUBLIC_SUPABASE_URL");
     }
-
-    const saved = window.localStorage.getItem(LOCAL_NOTES_KEY);
-    if (!saved) {
-      return [] as Note[];
+    if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      missing.push("NEXT_PUBLIC_SUPABASE_ANON_KEY");
     }
-
-    try {
-      const parsed = JSON.parse(saved) as Note[];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      console.error("local notes parse error", error);
-      return [] as Note[];
-    }
-  }, []);
-
-  const persistLocalNotes = useCallback((nextNotes: Note[]) => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(LOCAL_NOTES_KEY, JSON.stringify(nextNotes));
+    return missing;
   }, []);
 
   const fetchNotes = useCallback(async () => {
     if (!hasSupabaseEnv()) {
-      setNotes(loadLocalNotes());
-      setFetchError("");
+      const missing = getMissingSupabaseEnv();
+      setFetchError("読み込みに失敗しました");
+      setDebugMessage(`Supabase環境変数が不足しています: ${missing.join(", ")}`);
       setIsLoading(false);
       return;
     }
@@ -82,18 +67,21 @@ export default function Home() {
       if (error) {
         console.error("notes fetch error", error.message);
         setFetchError("読み込みに失敗しました");
+        setDebugMessage(`読み込みエラー: ${error.message}`);
         return;
       }
 
       setNotes(data ?? []);
+      setDebugMessage("");
       console.log("notes fetch success", { count: data?.length ?? 0 });
     } catch (error) {
       console.error("notes fetch error", error);
       setFetchError("読み込みに失敗しました");
+      setDebugMessage(`読み込み例外: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsLoading(false);
     }
-  }, [loadLocalNotes]);
+  }, [getMissingSupabaseEnv]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -134,21 +122,9 @@ export default function Home() {
     }
 
     if (!hasSupabaseEnv()) {
-      const now = new Date().toISOString();
-      const nextNote: Note = {
-        id: crypto.randomUUID(),
-        text,
-        created_at: now,
-        updated_at: now
-      };
-      const nextNotes = [nextNote, ...loadLocalNotes()];
-      persistLocalNotes(nextNotes);
-      setNotes(nextNotes);
-      setDraft("");
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(DRAFT_KEY);
-      }
-      setSaveError("");
+      const missing = getMissingSupabaseEnv();
+      setSaveError("保存に失敗しました");
+      setDebugMessage(`Supabase環境変数が不足しています: ${missing.join(", ")}`);
       return;
     }
 
@@ -162,10 +138,12 @@ export default function Home() {
       if (error) {
         console.error("note save error", error.message);
         setSaveError("保存に失敗しました");
+        setDebugMessage(`保存エラー: ${error.message}`);
         return;
       }
 
       console.log("note save success", { count: data?.length ?? 0 });
+      setDebugMessage("");
       setDraft("");
 
       if (typeof window !== "undefined") {
@@ -176,15 +154,15 @@ export default function Home() {
     } catch (error) {
       console.error("note save error", error);
       setSaveError("保存に失敗しました");
+      setDebugMessage(`保存例外: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
   const deleteNote = async (id: string) => {
     if (!hasSupabaseEnv()) {
-      const nextNotes = loadLocalNotes().filter((note) => note.id !== id);
-      persistLocalNotes(nextNotes);
-      setNotes(nextNotes);
-      setDeleteError("");
+      const missing = getMissingSupabaseEnv();
+      setDeleteError("削除に失敗しました");
+      setDebugMessage(`Supabase環境変数が不足しています: ${missing.join(", ")}`);
       return;
     }
 
@@ -195,9 +173,11 @@ export default function Home() {
     if (error) {
       console.error("note delete error", error.message);
       setDeleteError("削除に失敗しました");
+      setDebugMessage(`削除エラー: ${error.message}`);
       return;
     }
 
+    setDebugMessage("");
     setNotes((prev) => prev.filter((note) => note.id !== id));
   };
 
@@ -248,6 +228,11 @@ export default function Home() {
       </div>
 
       {saveError && <p className="empty">{saveError}</p>}
+      {debugMessage && (
+        <p className="empty" role="status" aria-live="polite">
+          デバッグ情報: {debugMessage}
+        </p>
+      )}
 
       {showList && (
         <section className="listSection">
