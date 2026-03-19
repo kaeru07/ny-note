@@ -223,6 +223,7 @@ export default function Home() {
   return (
     <main className="container">
       <h1>ny-note</h1>
+      <p style={{ color: "red" }}>DEBUG BUILD 001</p>
 
       <div className="buttonRow">
         <a
@@ -268,7 +269,7 @@ export default function Home() {
           onClick={saveNote}
           disabled={isSaving}
         >
-          {isSaving ? "保存中..." : "保存"}
+          {isSaving ? "保存中..." : "保存 DEBUG"}
         </button>
       </div>
 
