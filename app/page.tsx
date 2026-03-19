@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseClient, hasSupabaseEnv } from "@/lib/supabase";
 import type { PostgrestError } from "@supabase/supabase-js";
 
@@ -38,6 +38,7 @@ function formatDbError(prefix: string, error: PostgrestError | Error | string) {
 
 export default function Home() {
   const [draft, setDraft] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [search, setSearch] = useState("");
   const [showList, setShowList] = useState(false);
@@ -144,7 +145,10 @@ export default function Home() {
 
   const saveNote = async () => {
     console.log("save button clicked");
-    const text = draft.trim();
+    console.log("draft state:", draft);
+    console.log("textarea ref value:", textareaRef.current?.value);
+    const rawValue = textareaRef.current?.value ?? draft;
+    const text = rawValue.trim();
 
     setSaveMessage("");
 
@@ -181,6 +185,9 @@ export default function Home() {
       alert("保存成功");
       setSaveMessage("保存しました");
       setDraft("");
+      if (textareaRef.current) {
+        textareaRef.current.value = "";
+      }
 
       if (typeof window !== "undefined") {
         window.localStorage.removeItem(DRAFT_KEY);
@@ -255,11 +262,14 @@ export default function Home() {
       </div>
 
       <textarea
+        ref={textareaRef}
         value={draft}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => setDraft(event.currentTarget.value)}
+        onInput={(event) => setDraft(event.currentTarget.value)}
         placeholder="メモを入力"
         aria-label="メモ入力"
       />
+      <p className="empty">現在の文字数: {draft.length}</p>
 
       <div className="buttonRow saveRow">
         <button
