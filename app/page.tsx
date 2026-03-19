@@ -31,10 +31,24 @@ export default function Home() {
   const [fetchError, setFetchError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [deleteError, setDeleteError] = useState("");
+  const [debugMessage, setDebugMessage] = useState("");
+
+  const getMissingSupabaseEnv = useCallback(() => {
+    const missing: string[] = [];
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      missing.push("NEXT_PUBLIC_SUPABASE_URL");
+    }
+    if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      missing.push("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    }
+    return missing;
+  }, []);
 
   const fetchNotes = useCallback(async () => {
     if (!hasSupabaseEnv()) {
+      const missing = getMissingSupabaseEnv();
       setFetchError("読み込みに失敗しました");
+      setDebugMessage(`Supabase環境変数が不足しています: ${missing.join(", ")}`);
       setIsLoading(false);
       return;
     }
@@ -53,18 +67,21 @@ export default function Home() {
       if (error) {
         console.error("notes fetch error", error.message);
         setFetchError("読み込みに失敗しました");
+        setDebugMessage(`読み込みエラー: ${error.message}`);
         return;
       }
 
       setNotes(data ?? []);
+      setDebugMessage("");
       console.log("notes fetch success", { count: data?.length ?? 0 });
     } catch (error) {
       console.error("notes fetch error", error);
       setFetchError("読み込みに失敗しました");
+      setDebugMessage(`読み込み例外: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [getMissingSupabaseEnv]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -105,7 +122,9 @@ export default function Home() {
     }
 
     if (!hasSupabaseEnv()) {
+      const missing = getMissingSupabaseEnv();
       setSaveError("保存に失敗しました");
+      setDebugMessage(`Supabase環境変数が不足しています: ${missing.join(", ")}`);
       return;
     }
 
@@ -119,10 +138,12 @@ export default function Home() {
       if (error) {
         console.error("note save error", error.message);
         setSaveError("保存に失敗しました");
+        setDebugMessage(`保存エラー: ${error.message}`);
         return;
       }
 
       console.log("note save success", { count: data?.length ?? 0 });
+      setDebugMessage("");
       setDraft("");
 
       if (typeof window !== "undefined") {
@@ -133,12 +154,15 @@ export default function Home() {
     } catch (error) {
       console.error("note save error", error);
       setSaveError("保存に失敗しました");
+      setDebugMessage(`保存例外: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
   const deleteNote = async (id: string) => {
     if (!hasSupabaseEnv()) {
+      const missing = getMissingSupabaseEnv();
       setDeleteError("削除に失敗しました");
+      setDebugMessage(`Supabase環境変数が不足しています: ${missing.join(", ")}`);
       return;
     }
 
@@ -149,9 +173,11 @@ export default function Home() {
     if (error) {
       console.error("note delete error", error.message);
       setDeleteError("削除に失敗しました");
+      setDebugMessage(`削除エラー: ${error.message}`);
       return;
     }
 
+    setDebugMessage("");
     setNotes((prev) => prev.filter((note) => note.id !== id));
   };
 
@@ -202,6 +228,11 @@ export default function Home() {
       </div>
 
       {saveError && <p className="empty">{saveError}</p>}
+      {debugMessage && (
+        <p className="empty" role="status" aria-live="polite">
+          デバッグ情報: {debugMessage}
+        </p>
+      )}
 
       {showList && (
         <section className="listSection">
