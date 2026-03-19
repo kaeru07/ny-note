@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseClient, hasSupabaseEnv } from "@/lib/supabase";
+import type { PostgrestError } from "@supabase/supabase-js";
 
 type Note = {
   id: string;
@@ -22,6 +23,19 @@ function formatDate(iso: string) {
   }).format(new Date(iso));
 }
 
+function formatDbError(prefix: string, error: PostgrestError | Error | string) {
+  if (typeof error === "string") {
+    return `${prefix}: ${error}`;
+  }
+
+  if ("code" in error && "details" in error && "hint" in error) {
+    const details = [error.message, error.code, error.details, error.hint].filter(Boolean).join(" | ");
+    return `${prefix}: ${details}`;
+  }
+
+  return `${prefix}: ${error.message}`;
+}
+
 export default function Home() {
   const [draft, setDraft] = useState("");
   const [notes, setNotes] = useState<Note[]>([]);
@@ -31,7 +45,7 @@ export default function Home() {
   const [fetchError, setFetchError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [deleteError, setDeleteError] = useState("");
-  const [debugMessage, setDebugMessage] = useState("");
+  const [dbError, setDbError] = useState("");
 
   const getMissingSupabaseEnv = useCallback(() => {
     const missing: string[] = [];
@@ -48,7 +62,7 @@ export default function Home() {
     if (!hasSupabaseEnv()) {
       const missing = getMissingSupabaseEnv();
       setFetchError("読み込みに失敗しました");
-      setDebugMessage(`Supabase環境変数が不足しています: ${missing.join(", ")}`);
+      setDbError(`Supabase環境変数が不足しています: ${missing.join(", ")}`);
       setIsLoading(false);
       return;
     }
@@ -56,6 +70,7 @@ export default function Home() {
     const supabase = getSupabaseClient();
     setIsLoading(true);
     setFetchError("");
+    setDbError("");
     console.log("notes fetch start");
 
     try {
@@ -65,19 +80,26 @@ export default function Home() {
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("notes fetch error", error.message);
+        console.error("notes fetch error", error);
         setFetchError("読み込みに失敗しました");
-        setDebugMessage(`読み込みエラー: ${error.message}`);
+        setDbError(formatDbError("読み込みエラー", error));
         return;
       }
 
-      setNotes(data ?? []);
-      setDebugMessage("");
+      if (!data) {
+        const message = "読み込み結果が空です（data が null）";
+        console.error("notes fetch error", message);
+        setFetchError("読み込みに失敗しました");
+        setDbError(message);
+        return;
+      }
+
+      setNotes(data);
       console.log("notes fetch success", { count: data?.length ?? 0 });
     } catch (error) {
       console.error("notes fetch error", error);
       setFetchError("読み込みに失敗しました");
-      setDebugMessage(`読み込み例外: ${error instanceof Error ? error.message : String(error)}`);
+      setDbError(formatDbError("読み込み例外", error instanceof Error ? error : String(error)));
     } finally {
       setIsLoading(false);
     }
@@ -124,26 +146,38 @@ export default function Home() {
     if (!hasSupabaseEnv()) {
       const missing = getMissingSupabaseEnv();
       setSaveError("保存に失敗しました");
-      setDebugMessage(`Supabase環境変数が不足しています: ${missing.join(", ")}`);
+      setDbError(`Supabase環境変数が不足しています: ${missing.join(", ")}`);
       return;
     }
 
     const supabase = getSupabaseClient();
     setSaveError("");
+    setDbError("");
     console.log("note save start");
+    const payload = [{ text }];
 
     try {
-      const { data, error } = await supabase.from("notes").insert([{ text }]).select("id, text, created_at, updated_at");
+      const { data, error } = await supabase
+        .from("notes")
+        .insert(payload)
+        .select("id, text, created_at, updated_at");
 
       if (error) {
-        console.error("note save error", error.message);
+        console.error("note save error", error);
         setSaveError("保存に失敗しました");
-        setDebugMessage(`保存エラー: ${error.message}`);
+        setDbError(formatDbError("保存エラー", error));
         return;
       }
 
-      console.log("note save success", { count: data?.length ?? 0 });
-      setDebugMessage("");
+      if (!data || data.length === 0) {
+        const message = "保存後のselect結果が空です";
+        console.error("note save error", message);
+        setSaveError("保存に失敗しました");
+        setDbError(message);
+        return;
+      }
+
+      console.log("note save success", { inserted: data });
       setDraft("");
 
       if (typeof window !== "undefined") {
@@ -154,7 +188,7 @@ export default function Home() {
     } catch (error) {
       console.error("note save error", error);
       setSaveError("保存に失敗しました");
-      setDebugMessage(`保存例外: ${error instanceof Error ? error.message : String(error)}`);
+      setDbError(formatDbError("保存例外", error instanceof Error ? error : String(error)));
     }
   };
 
@@ -162,22 +196,22 @@ export default function Home() {
     if (!hasSupabaseEnv()) {
       const missing = getMissingSupabaseEnv();
       setDeleteError("削除に失敗しました");
-      setDebugMessage(`Supabase環境変数が不足しています: ${missing.join(", ")}`);
+      setDbError(`Supabase環境変数が不足しています: ${missing.join(", ")}`);
       return;
     }
 
     const supabase = getSupabaseClient();
     setDeleteError("");
+    setDbError("");
 
     const { error } = await supabase.from("notes").delete().eq("id", id);
     if (error) {
-      console.error("note delete error", error.message);
+      console.error("note delete error", error);
       setDeleteError("削除に失敗しました");
-      setDebugMessage(`削除エラー: ${error.message}`);
+      setDbError(formatDbError("削除エラー", error));
       return;
     }
 
-    setDebugMessage("");
     setNotes((prev) => prev.filter((note) => note.id !== id));
   };
 
@@ -228,9 +262,9 @@ export default function Home() {
       </div>
 
       {saveError && <p className="empty">{saveError}</p>}
-      {debugMessage && (
+      {dbError && (
         <p className="empty" role="status" aria-live="polite">
-          デバッグ情報: {debugMessage}
+          エラー詳細: {dbError}
         </p>
       )}
 
