@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSupabaseClient, hasSupabaseEnv } from "@/lib/supabase";
 
 type Note = {
@@ -27,8 +27,44 @@ export default function Home() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [search, setSearch] = useState("");
   const [showList, setShowList] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
+
+  const fetchNotes = useCallback(async () => {
+    if (!hasSupabaseEnv()) {
+      setFetchError("読み込みに失敗しました");
+      setIsLoading(false);
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+    setIsLoading(true);
+    setFetchError("");
+    console.log("notes fetch start");
+
+    try {
+      const { data, error } = await supabase
+        .from("notes")
+        .select("id, text, created_at, updated_at")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("notes fetch error", error.message);
+        setFetchError("読み込みに失敗しました");
+        return;
+      }
+
+      setNotes(data ?? []);
+      console.log("notes fetch success", { count: data?.length ?? 0 });
+    } catch (error) {
+      console.error("notes fetch error", error);
+      setFetchError("読み込みに失敗しました");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -50,29 +86,8 @@ export default function Home() {
   }, [draft]);
 
   useEffect(() => {
-    if (!hasSupabaseEnv()) {
-      setErrorMessage("接続エラー");
-      setIsLoading(false);
-      return;
-    }
-
-    const fetchNotes = async () => {
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase
-        .from("notes")
-        .select("id, text, created_at, updated_at")
-        .order("updated_at", { ascending: false });
-
-      if (error) {
-        setErrorMessage("接続エラー");
-      } else if (data) {
-        setNotes(data);
-      }
-      setIsLoading(false);
-    };
-
     void fetchNotes();
-  }, []);
+  }, [fetchNotes]);
 
   const filteredNotes = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -90,40 +105,50 @@ export default function Home() {
     }
 
     if (!hasSupabaseEnv()) {
-      setErrorMessage("接続エラー");
+      setSaveError("保存に失敗しました");
       return;
     }
 
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase
-      .from("notes")
-      .insert({ text })
-      .select("id, text, created_at, updated_at")
-      .single();
+    setSaveError("");
+    console.log("note save start");
 
-    if (error || !data) {
-      setErrorMessage("接続エラー");
-      return;
-    }
+    try {
+      const { data, error } = await supabase.from("notes").insert([{ text }]).select("id, text, created_at, updated_at");
 
-    setNotes((prev) => [data, ...prev]);
-    setDraft("");
+      if (error) {
+        console.error("note save error", error.message);
+        setSaveError("保存に失敗しました");
+        return;
+      }
 
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(DRAFT_KEY);
+      console.log("note save success", { count: data?.length ?? 0 });
+      setDraft("");
+
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(DRAFT_KEY);
+      }
+
+      await fetchNotes();
+    } catch (error) {
+      console.error("note save error", error);
+      setSaveError("保存に失敗しました");
     }
   };
 
   const deleteNote = async (id: string) => {
     if (!hasSupabaseEnv()) {
-      setErrorMessage("接続エラー");
+      setDeleteError("削除に失敗しました");
       return;
     }
 
     const supabase = getSupabaseClient();
+    setDeleteError("");
+
     const { error } = await supabase.from("notes").delete().eq("id", id);
     if (error) {
-      setErrorMessage("接続エラー");
+      console.error("note delete error", error.message);
+      setDeleteError("削除に失敗しました");
       return;
     }
 
@@ -176,6 +201,8 @@ export default function Home() {
         </button>
       </div>
 
+      {saveError && <p className="empty">{saveError}</p>}
+
       {showList && (
         <section className="listSection">
           <input
@@ -187,12 +214,12 @@ export default function Home() {
           />
 
           <div className="notes">
-            {errorMessage ? (
-              <p className="empty">{errorMessage}</p>
+            {fetchError ? (
+              <p className="empty">{fetchError}</p>
             ) : isLoading ? (
               <p className="empty">読み込み中...</p>
             ) : filteredNotes.length === 0 ? (
-              <p className="empty">該当するメモはありません</p>
+              <p className="empty">まだメモはありません</p>
             ) : (
               filteredNotes.map((note) => (
                 <article key={note.id} className="card">
@@ -210,6 +237,7 @@ export default function Home() {
               ))
             )}
           </div>
+          {deleteError && <p className="empty">{deleteError}</p>}
         </section>
       )}
     </main>
