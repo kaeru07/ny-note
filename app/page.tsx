@@ -42,8 +42,10 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [showList, setShowList] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
   const [deleteError, setDeleteError] = useState("");
   const [dbError, setDbError] = useState("");
 
@@ -59,6 +61,8 @@ export default function Home() {
   }, []);
 
   const fetchNotes = useCallback(async () => {
+    console.log("notes fetch start");
+
     if (!hasSupabaseEnv()) {
       const missing = getMissingSupabaseEnv();
       setFetchError("読み込みに失敗しました");
@@ -71,16 +75,17 @@ export default function Home() {
     setIsLoading(true);
     setFetchError("");
     setDbError("");
-    console.log("notes fetch start");
 
     try {
       const { data, error } = await supabase
         .from("notes")
-        .select("id, text, created_at, updated_at")
+        .select("*")
         .order("created_at", { ascending: false });
 
+      console.log("FETCH RESULT:", { data, error });
+
       if (error) {
-        console.error("notes fetch error", error);
+        console.error("notes fetch error full:", JSON.stringify(error, null, 2));
         setFetchError("読み込みに失敗しました");
         setDbError(formatDbError("読み込みエラー", error));
         return;
@@ -94,10 +99,10 @@ export default function Home() {
         return;
       }
 
-      setNotes(data);
-      console.log("notes fetch success", { count: data?.length ?? 0 });
+      setNotes(data as Note[]);
+      console.log("notes fetch success", { count: data.length });
     } catch (error) {
-      console.error("notes fetch error", error);
+      console.error("notes fetch exception full:", error);
       setFetchError("読み込みに失敗しました");
       setDbError(formatDbError("読み込み例外", error instanceof Error ? error : String(error)));
     } finally {
@@ -138,8 +143,13 @@ export default function Home() {
   }, [notes, search]);
 
   const saveNote = async () => {
+    console.log("save button clicked");
     const text = draft.trim();
+
+    setSaveMessage("");
+
     if (!text) {
+      setSaveError("メモを入力してください");
       return;
     }
 
@@ -153,31 +163,23 @@ export default function Home() {
     const supabase = getSupabaseClient();
     setSaveError("");
     setDbError("");
+    setIsSaving(true);
     console.log("note save start");
-    const payload = [{ text }];
 
     try {
-      const { data, error } = await supabase
-        .from("notes")
-        .insert(payload)
-        .select("id, text, created_at, updated_at");
+      const { data, error } = await supabase.from("notes").insert([{ text }]).select();
+      console.log("INSERT RESULT:", { data, error });
 
       if (error) {
-        console.error("note save error", error);
-        setSaveError("保存に失敗しました");
+        console.error("note save error full:", JSON.stringify(error, null, 2));
+        setSaveError(`保存に失敗しました: ${error.message}`);
         setDbError(formatDbError("保存エラー", error));
+        alert("保存エラー: " + JSON.stringify(error));
         return;
       }
 
-      if (!data || data.length === 0) {
-        const message = "保存後のselect結果が空です";
-        console.error("note save error", message);
-        setSaveError("保存に失敗しました");
-        setDbError(message);
-        return;
-      }
-
-      console.log("note save success", { inserted: data });
+      alert("保存成功");
+      setSaveMessage("保存しました");
       setDraft("");
 
       if (typeof window !== "undefined") {
@@ -185,10 +187,13 @@ export default function Home() {
       }
 
       await fetchNotes();
-    } catch (error) {
-      console.error("note save error", error);
-      setSaveError("保存に失敗しました");
-      setDbError(formatDbError("保存例外", error instanceof Error ? error : String(error)));
+    } catch (e) {
+      console.error("note save exception full:", e);
+      setSaveError(`保存に失敗しました: ${e instanceof Error ? e.message : String(e)}`);
+      setDbError(formatDbError("保存例外", e instanceof Error ? e : String(e)));
+      alert("例外: " + String(e));
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -256,12 +261,19 @@ export default function Home() {
       />
 
       <div className="buttonRow saveRow">
-        <button className="btn btnPrimary" type="button" aria-label="メモを保存" onClick={saveNote}>
-          保存
+        <button
+          className="btn btnPrimary"
+          type="button"
+          aria-label="メモを保存"
+          onClick={saveNote}
+          disabled={isSaving}
+        >
+          {isSaving ? "保存中..." : "保存"}
         </button>
       </div>
 
       {saveError && <p className="empty">{saveError}</p>}
+      {saveMessage && <p className="empty">{saveMessage}</p>}
       {dbError && (
         <p className="empty" role="status" aria-live="polite">
           エラー詳細: {dbError}
