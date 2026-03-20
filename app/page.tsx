@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Note = {
   id: number;
@@ -10,6 +10,33 @@ type Note = {
 
 const NOTES_KEY = "ny-note-notes";
 const DRAFT_KEY = "ny-note-draft";
+
+function sortNotesDesc(notes: Note[]) {
+  return [...notes].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+}
+
+function normalizeNotes(input: unknown): Note[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return input
+    .filter((item): item is Note => {
+      return (
+        !!item &&
+        typeof item === "object" &&
+        typeof (item as Note).id === "number" &&
+        typeof (item as Note).text === "string" &&
+        typeof (item as Note).updatedAt === "string"
+      );
+    })
+    .map((item) => ({
+      id: item.id,
+      text: item.text.trim(),
+      updatedAt: item.updatedAt
+    }))
+    .filter((item) => item.text.length > 0);
+}
 
 function readNotes(): Note[] {
   if (typeof window === "undefined") {
@@ -22,14 +49,8 @@ function readNotes(): Note[] {
   }
 
   try {
-    const parsed = JSON.parse(raw) as Note[];
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed
-      .filter((item) => item && typeof item.id === "number" && typeof item.text === "string" && typeof item.updatedAt === "string")
-      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+    const parsed = JSON.parse(raw);
+    return sortNotesDesc(normalizeNotes(parsed));
   } catch {
     return [];
   }
@@ -59,6 +80,8 @@ export default function Page() {
   const [showList, setShowList] = useState(true);
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -86,6 +109,10 @@ export default function Page() {
     return notes.filter((note) => note.text.toLowerCase().includes(keyword));
   }, [notes, search]);
 
+  const resetEditing = () => {
+    setEditingId(null);
+  };
+
   const handleSave = () => {
     const text = draft.trim();
 
@@ -94,18 +121,39 @@ export default function Page() {
       return;
     }
 
-    const nextNote: Note = {
-      id: Date.now(),
-      text,
-      updatedAt: new Date().toISOString()
-    };
+    const now = new Date().toISOString();
 
-    const nextNotes = [nextNote, ...notes];
-    setNotes(nextNotes);
-    writeNotes(nextNotes);
+    if (editingId !== null) {
+      const nextNotes = sortNotesDesc(
+        notes.map((note) =>
+          note.id === editingId
+            ? {
+                ...note,
+                text,
+                updatedAt: now
+              }
+            : note
+        )
+      );
+      setNotes(nextNotes);
+      writeNotes(nextNotes);
+      setMessage("更新しました");
+    } else {
+      const nextNote: Note = {
+        id: Date.now(),
+        text,
+        updatedAt: now
+      };
+
+      const nextNotes = sortNotesDesc([nextNote, ...notes]);
+      setNotes(nextNotes);
+      writeNotes(nextNotes);
+      setMessage("保存しました");
+    }
+
     setDraft("");
+    resetEditing();
     window.localStorage.removeItem(DRAFT_KEY);
-    setMessage("保存しました");
     setShowList(true);
   };
 
@@ -113,8 +161,101 @@ export default function Page() {
     const nextNotes = notes.filter((note) => note.id !== id);
     setNotes(nextNotes);
     writeNotes(nextNotes);
+
+    if (editingId === id) {
+      setDraft("");
+      resetEditing();
+      window.localStorage.removeItem(DRAFT_KEY);
+    }
+
     setMessage("削除しました");
   };
+
+  const handleEditStart = (note: Note) => {
+    setDraft(note.text);
+    setEditingId(note.id);
+    setShowList(true);
+    setMessage("編集中です");
+  };
+
+  const handleEditCancel = () => {
+    setDraft("");
+    resetEditing();
+    setMessage("編集をキャンセルしました");
+    window.localStorage.removeItem(DRAFT_KEY);
+  };
+
+  const handleExport = () => {
+    if (notes.length === 0) {
+      setMessage("エクスポートするメモがありません");
+      return;
+    }
+
+    const data = JSON.stringify(notes, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const dateStamp = new Date().toISOString().slice(0, 10);
+
+    link.href = url;
+    link.download = `ny-note-export-${dateStamp}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    setMessage("エクスポートしました");
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const imported = normalizeNotes(parsed);
+
+      if (imported.length === 0) {
+        setMessage("インポート可能なメモがありません");
+        return;
+      }
+
+      const existingIds = new Set(notes.map((note) => note.id));
+      const now = new Date().toISOString();
+      let sequence = Date.now();
+
+      const sanitized = imported.map((note) => {
+        if (!existingIds.has(note.id)) {
+          existingIds.add(note.id);
+          return note;
+        }
+
+        sequence += 1;
+        return {
+          ...note,
+          id: sequence,
+          updatedAt: now
+        };
+      });
+
+      const nextNotes = sortNotesDesc([...sanitized, ...notes]);
+      setNotes(nextNotes);
+      writeNotes(nextNotes);
+      setMessage(`${sanitized.length}件インポートしました`);
+    } catch {
+      setMessage("不正なJSONのためインポートできません");
+    }
+  };
+
+  const hasSearch = search.trim().length > 0;
 
   return (
     <main className="container">
@@ -130,6 +271,18 @@ export default function Page() {
         <button className="btn" type="button" onClick={() => setShowList((prev) => !prev)}>
           {showList ? "一覧を閉じる" : "一覧表示"}
         </button>
+        <button className="btn" type="button" onClick={handleExport}>
+          エクスポート
+        </button>
+        <button className="btn" type="button" onClick={handleImportClick}>
+          インポート
+        </button>
+        <input ref={fileInputRef} type="file" accept="application/json,.json" className="hiddenInput" onChange={handleImportChange} />
+      </div>
+
+      <div className="sectionTitleRow">
+        <h2>{editingId !== null ? "メモ編集" : "メモ作成"}</h2>
+        {editingId !== null && <span className="editingBadge">編集中</span>}
       </div>
 
       <textarea
@@ -141,15 +294,23 @@ export default function Page() {
 
       <div className="buttonRow saveRow">
         <button className="btn btnPrimary" type="button" onClick={handleSave}>
-          保存
+          {editingId !== null ? "更新保存" : "保存"}
         </button>
+        {editingId !== null && (
+          <button className="btn" type="button" onClick={handleEditCancel}>
+            編集キャンセル
+          </button>
+        )}
       </div>
 
       {message && <p className="status">{message}</p>}
 
       {showList && (
         <section className="listSection">
-          <h2>保存済みメモ一覧</h2>
+          <div className="sectionTitleRow">
+            <h2>保存済みメモ一覧</h2>
+            <p className="count">{notes.length}件</p>
+          </div>
 
           <input
             type="search"
@@ -161,15 +322,20 @@ export default function Page() {
 
           <div className="notes">
             {filteredNotes.length === 0 ? (
-              <p className="empty">メモはありません</p>
+              <p className="empty">{hasSearch ? "検索結果は0件です" : "メモはありません"}</p>
             ) : (
               filteredNotes.map((note) => (
                 <article key={note.id} className="card">
                   <p className="text">{note.text}</p>
                   <p className="meta">更新: {formatDate(note.updatedAt)}</p>
-                  <button className="btn btnDanger" type="button" onClick={() => handleDelete(note.id)}>
-                    削除
-                  </button>
+                  <div className="buttonRow cardActions">
+                    <button className="btn" type="button" onClick={() => handleEditStart(note)}>
+                      編集
+                    </button>
+                    <button className="btn btnDanger" type="button" onClick={() => handleDelete(note.id)}>
+                      削除
+                    </button>
+                  </div>
                 </article>
               ))
             )}
