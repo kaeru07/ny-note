@@ -43,6 +43,7 @@ h2 {
   color: #111827;
   font-size: 15px;
   font-weight: 600;
+  min-height: 44px;
   padding: 10px 14px;
   text-decoration: none;
   cursor: pointer;
@@ -114,9 +115,42 @@ textarea {
   font-size: 13px;
 }
 
+.count {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.sectionTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.editingBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.cardActions {
+  margin-bottom: 0;
+}
+
 @media (max-width: 640px) {
   .container {
-    padding: 14px 12px 28px;
+    padding: 16px 14px 30px;
   }
 
   h1 {
@@ -124,7 +158,16 @@ textarea {
   }
 
   .btn {
-    flex: 1 1 auto;
+    flex: 1 1 calc(50% - 10px);
     text-align: center;
+    padding: 11px 12px;
+  }
+
+  .cardActions .btn {
+    flex: 1;
+  }
+
+  textarea {
+    min-height: 180px;
   }
 }
