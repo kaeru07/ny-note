@@ -227,7 +227,12 @@ export default function Page() {
     setShowList(true);
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: number) => {
+    const shouldDelete = window.confirm("このメモを削除しますか？");
+    if (!shouldDelete) {
+      return;
+    }
+
     const nextNotes = notes.filter((note) => note.id !== id);
     setNotes(nextNotes);
     writeNotes(nextNotes);
@@ -239,6 +244,29 @@ export default function Page() {
     }
 
     setMessage("削除しました");
+
+    if (!hasSupabaseEnv()) {
+      return;
+    }
+
+    try {
+      const supabase = getSupabaseClient();
+      const { error } = await supabase.from("notes").delete().eq("id", id);
+
+      if (error) {
+        console.error(JSON.stringify(error, null, 2));
+        setMessage(`削除しました（Supabase削除失敗: ${error.message}）`);
+        return;
+      }
+
+      console.log("supabase delete success", id);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Supabase削除に失敗しました";
+      console.error(JSON.stringify(error, null, 2));
+      setMessage(`削除しました（Supabase削除失敗: ${errorMessage}）`);
+    } finally {
+      await fetchSupabaseNotes();
+    }
   };
 
   const handleEditStart = (note: Note) => {
