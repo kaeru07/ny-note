@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseClient, hasSupabaseEnv } from "@/lib/supabase";
 
 type Note = {
@@ -94,6 +94,40 @@ export default function Page() {
   const [supabaseErrorMessage, setSupabaseErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const fetchSupabaseNotes = useCallback(async () => {
+    if (!hasSupabaseEnv()) {
+      setSupabaseErrorMessage("Supabaseの環境変数が未設定です");
+      setSupabaseNotes([]);
+      return;
+    }
+
+    console.log("supabase fetch start");
+    setIsSupabaseLoading(true);
+    setSupabaseErrorMessage(null);
+
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.from("notes").select("*").order("created_at", { ascending: false });
+
+      console.log("supabase fetch result", { data, error });
+
+      if (error) {
+        console.error(JSON.stringify(error, null, 2));
+        setSupabaseNotes([]);
+        setSupabaseErrorMessage(error.message);
+        return;
+      }
+
+      setSupabaseNotes((data ?? []) as SupabaseNote[]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Supabase一覧の取得に失敗しました";
+      setSupabaseNotes([]);
+      setSupabaseErrorMessage(message);
+    } finally {
+      setIsSupabaseLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
@@ -112,61 +146,8 @@ export default function Page() {
   }, [draft]);
 
   useEffect(() => {
-    if (!hasSupabaseEnv()) {
-      setSupabaseErrorMessage("Supabaseの環境変数が未設定です");
-      setSupabaseNotes([]);
-      return;
-    }
-
-    let isCancelled = false;
-
-    const fetchSupabaseNotes = async () => {
-      console.log("supabase fetch start");
-      setIsSupabaseLoading(true);
-      setSupabaseErrorMessage(null);
-
-      try {
-        const supabase = getSupabaseClient();
-        const { data, error } = await supabase.from("notes").select("*").order("created_at", { ascending: false });
-
-        console.log("supabase fetch result", { data, error });
-
-        if (error) {
-          console.error(JSON.stringify(error, null, 2));
-        }
-
-        if (isCancelled) {
-          return;
-        }
-
-        if (error) {
-          setSupabaseNotes([]);
-          setSupabaseErrorMessage(error.message);
-          return;
-        }
-
-        setSupabaseNotes((data ?? []) as SupabaseNote[]);
-      } catch (error) {
-        if (isCancelled) {
-          return;
-        }
-
-        const message = error instanceof Error ? error.message : "Supabase一覧の取得に失敗しました";
-        setSupabaseNotes([]);
-        setSupabaseErrorMessage(message);
-      } finally {
-        if (!isCancelled) {
-          setIsSupabaseLoading(false);
-        }
-      }
-    };
-
     fetchSupabaseNotes();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
+  }, [fetchSupabaseNotes]);
 
   const filteredNotes = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -181,7 +162,7 @@ export default function Page() {
     setEditingId(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const text = draft.trim();
 
     if (!text) {
@@ -217,6 +198,27 @@ export default function Page() {
       setNotes(nextNotes);
       writeNotes(nextNotes);
       setMessage("保存しました");
+
+      if (hasSupabaseEnv()) {
+        try {
+          const supabase = getSupabaseClient();
+          const { data, error } = await supabase.from("notes").insert([{ text }]).select();
+
+          if (error) {
+            console.error(JSON.stringify(error, null, 2));
+            setMessage(`保存しました（Supabase保存失敗: ${error.message}）`);
+          } else {
+            console.log("supabase insert success", data);
+            setMessage("保存しました / Supabase保存成功");
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Supabase保存に失敗しました";
+          console.error(JSON.stringify(error, null, 2));
+          setMessage(`保存しました（Supabase保存失敗: ${errorMessage}）`);
+        }
+
+        await fetchSupabaseNotes();
+      }
     }
 
     setDraft("");
