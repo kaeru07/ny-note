@@ -1,11 +1,19 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { getSupabaseClient, hasSupabaseEnv } from "@/lib/supabase";
 
 type Note = {
   id: number;
   text: string;
   updatedAt: string;
+};
+
+type SupabaseNote = {
+  id: number;
+  text: string;
+  created_at: string;
+  updated_at: string;
 };
 
 const NOTES_KEY = "ny-note-notes";
@@ -81,6 +89,9 @@ export default function Page() {
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [supabaseNotes, setSupabaseNotes] = useState<SupabaseNote[]>([]);
+  const [isSupabaseLoading, setIsSupabaseLoading] = useState(false);
+  const [supabaseErrorMessage, setSupabaseErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -99,6 +110,63 @@ export default function Page() {
 
     window.localStorage.setItem(DRAFT_KEY, draft);
   }, [draft]);
+
+  useEffect(() => {
+    if (!hasSupabaseEnv()) {
+      setSupabaseErrorMessage("Supabaseの環境変数が未設定です");
+      setSupabaseNotes([]);
+      return;
+    }
+
+    let isCancelled = false;
+
+    const fetchSupabaseNotes = async () => {
+      console.log("supabase fetch start");
+      setIsSupabaseLoading(true);
+      setSupabaseErrorMessage(null);
+
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase.from("notes").select("*").order("created_at", { ascending: false });
+
+        console.log("supabase fetch result", { data, error });
+
+        if (error) {
+          console.error(JSON.stringify(error, null, 2));
+        }
+
+        if (isCancelled) {
+          return;
+        }
+
+        if (error) {
+          setSupabaseNotes([]);
+          setSupabaseErrorMessage(error.message);
+          return;
+        }
+
+        setSupabaseNotes((data ?? []) as SupabaseNote[]);
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : "Supabase一覧の取得に失敗しました";
+        setSupabaseNotes([]);
+        setSupabaseErrorMessage(message);
+      } finally {
+        if (!isCancelled) {
+          setIsSupabaseLoading(false);
+        }
+      }
+    };
+
+    fetchSupabaseNotes();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   const filteredNotes = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -306,41 +374,68 @@ export default function Page() {
       {message && <p className="status">{message}</p>}
 
       {showList && (
-        <section className="listSection">
-          <div className="sectionTitleRow">
-            <h2>保存済みメモ一覧</h2>
-            <p className="count">{notes.length}件</p>
-          </div>
+        <>
+          <section className="listSection">
+            <div className="sectionTitleRow">
+              <h2>保存済みメモ一覧</h2>
+              <p className="count">{notes.length}件</p>
+            </div>
 
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.currentTarget.value)}
-            placeholder="検索"
-            aria-label="メモ検索"
-          />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.currentTarget.value)}
+              placeholder="検索"
+              aria-label="メモ検索"
+            />
 
-          <div className="notes">
-            {filteredNotes.length === 0 ? (
-              <p className="empty">{hasSearch ? "検索結果は0件です" : "メモはありません"}</p>
-            ) : (
-              filteredNotes.map((note) => (
-                <article key={note.id} className="card">
-                  <p className="text">{note.text}</p>
-                  <p className="meta">更新: {formatDate(note.updatedAt)}</p>
-                  <div className="buttonRow cardActions">
-                    <button className="btn" type="button" onClick={() => handleEditStart(note)}>
-                      編集
-                    </button>
-                    <button className="btn btnDanger" type="button" onClick={() => handleDelete(note.id)}>
-                      削除
-                    </button>
-                  </div>
-                </article>
-              ))
-            )}
-          </div>
-        </section>
+            <div className="notes">
+              {filteredNotes.length === 0 ? (
+                <p className="empty">{hasSearch ? "検索結果は0件です" : "メモはありません"}</p>
+              ) : (
+                filteredNotes.map((note) => (
+                  <article key={note.id} className="card">
+                    <p className="text">{note.text}</p>
+                    <p className="meta">更新: {formatDate(note.updatedAt)}</p>
+                    <div className="buttonRow cardActions">
+                      <button className="btn" type="button" onClick={() => handleEditStart(note)}>
+                        編集
+                      </button>
+                      <button className="btn btnDanger" type="button" onClick={() => handleDelete(note.id)}>
+                        削除
+                      </button>
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="listSection">
+            <div className="sectionTitleRow">
+              <h2>Supabaseメモ一覧</h2>
+              <p className="count">{supabaseNotes.length}件</p>
+            </div>
+
+            {isSupabaseLoading && <p className="status">読み込み中...</p>}
+            {!isSupabaseLoading && supabaseErrorMessage && <p className="status">取得失敗: {supabaseErrorMessage}</p>}
+            {!isSupabaseLoading && !supabaseErrorMessage && <p className="status">読み込み成功: {supabaseNotes.length}件</p>}
+
+            <div className="notes">
+              {!isSupabaseLoading && !supabaseErrorMessage && supabaseNotes.length === 0 ? (
+                <p className="empty">Supabaseにメモはありません</p>
+              ) : (
+                supabaseNotes.map((note) => (
+                  <article key={`supabase-${note.id}`} className="card">
+                    <p className="text">{note.text}</p>
+                    <p className="meta">作成: {formatDate(note.created_at)}</p>
+                    <p className="meta">更新: {formatDate(note.updated_at)}</p>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+        </>
       )}
     </main>
   );
